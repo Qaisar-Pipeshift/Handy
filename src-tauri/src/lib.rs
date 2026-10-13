@@ -304,6 +304,17 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             "copy_last_transcript" => {
                 tray::copy_last_transcript(app);
             }
+            "live_dictation" => {
+                // Fork: toggle live (streamed) vs one-shot remote dictation; the next recording uses it.
+                let mut s = settings::get_settings(app);
+                s.remote_streaming = !s.remote_streaming;
+                log::info!(
+                    "Live dictation turned {} via tray",
+                    if s.remote_streaming { "on" } else { "off" }
+                );
+                settings::write_settings(app, s);
+                tray::update_tray_menu(app);
+            }
             "unload_model" => {
                 let transcription_manager = app.state::<Arc<TranscriptionManager>>();
                 if !transcription_manager.is_model_loaded() {

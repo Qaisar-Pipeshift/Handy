@@ -63,6 +63,8 @@ struct MenuInputs {
     downloaded_models: Vec<(String, String)>,
     locale: String,
     update_checks_enabled: bool,
+    /// Fork: `Some(on)` when the remote server is configured — the "Live dictation" toggle and its state.
+    remote_live: Option<bool>,
 }
 
 /// Complete description of what the tray should look like.
@@ -323,6 +325,8 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
         .map(|m| (m.id, m.name))
         .collect();
     downloaded_models.sort_by(|a, b| a.1.cmp(&b.1));
+    let remote_live =
+        crate::remote_transcription::enabled(&settings).then_some(settings.remote_streaming);
 
     TrayDesired {
         icon_path: get_icon_path(theme, icon_state, warning),
@@ -334,6 +338,7 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
             downloaded_models,
             locale: settings.app_language,
             update_checks_enabled: settings.update_checks_enabled,
+            remote_live,
         },
     }
 }
@@ -554,7 +559,7 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
             None::<&str>,
         )?;
 
-        Menu::with_items(
+        let menu = Menu::with_items(
             app,
             &[
                 &version_i,
@@ -569,7 +574,16 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
                 &separator()?,
                 &quit_i,
             ],
-        )?
+        )?;
+        // Fork: one-click switch between live (streamed) and one-shot remote dictation; takes effect on the next
+        // recording. Placed above the model submenu.
+        if let Some(live) = inputs.remote_live {
+            let live_i =
+                CheckMenuItem::with_id(app, "live_dictation", "Live dictation", true, live, None::<&str>)?;
+            menu.insert(&live_i, 4)?;
+            menu.insert(&separator()?, 5)?;
+        }
+        menu
     };
 
     // When update checks are forced off (e.g. HANDY_DISABLE_UPDATER, set by
@@ -694,6 +708,7 @@ mod tests {
             downloaded_models: vec![("small".to_string(), "Small".to_string())],
             locale: "en".to_string(),
             update_checks_enabled: true,
+            remote_live: None,
         }
     }
 
