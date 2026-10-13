@@ -168,7 +168,8 @@
       },
       "baseUrl": {
         "label": "Server URL",
-        "description": "Base URL of the dictation server, e.g. https://your-host.example.com (no path)."
+        "description": "Base URL of the dictation server, e.g. https://your-host.example.com (no path).",
+        "invalid": "The URL must start with https:// or http://"
       },
       "apiKey": {
         "label": "API key",

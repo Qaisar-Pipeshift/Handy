@@ -381,11 +381,22 @@ struct Speculation {
 }
 
 static SPEC_ARMED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// True when the last finalized live stream was a remote session that completed (its "" means "no speech").
+static LAST_FINAL_REMOTE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_last_final_remote(remote: bool) {
+    LAST_FINAL_REMOTE.store(remote, std::sync::atomic::Ordering::Release);
+}
+
+pub fn last_final_was_remote() -> bool {
+    LAST_FINAL_REMOTE.load(std::sync::atomic::Ordering::Acquire)
+}
 static SPECULATION: std::sync::Mutex<Option<Speculation>> = std::sync::Mutex::new(None);
 
 /// Called at recording start: arm for this dictation (post-process shortcut + live + opt-in) and drop any leftover.
 pub fn arm_speculation(on: bool) {
     SPEC_ARMED.store(on, std::sync::atomic::Ordering::Release);
+    set_last_final_remote(false);
     if let Some(old) = SPECULATION.lock().unwrap_or_else(|e| e.into_inner()).take() {
         old.handle.abort();
     }
@@ -419,14 +430,19 @@ pub fn speculate(app: &tauri::AppHandle, committed_raw: &str) {
 /// running — it is the same request the normal path would make), else None and the normal path runs.
 pub async fn take_speculation(final_text: &str) -> Option<String> {
     SPEC_ARMED.store(false, std::sync::atomic::Ordering::Release);
-    let spec = SPECULATION.lock().unwrap_or_else(|e| e.into_inner()).take()?;
+    let mut spec = SPECULATION.lock().unwrap_or_else(|e| e.into_inner()).take()?;
     if spec.input != final_text {
         spec.handle.abort();
         return None;
     }
-    match tokio::time::timeout(Duration::from_secs(20), spec.handle).await {
+    match tokio::time::timeout(Duration::from_secs(20), &mut spec.handle).await {
         Ok(Ok(cleaned)) => cleaned,
-        _ => None,
+        Ok(Err(_)) => None,
+        Err(_) => {
+            // Still running after 20 s: stop it so it does not race the normal call that follows.
+            spec.handle.abort();
+            None
+        }
     }
 }
 

@@ -354,6 +354,7 @@ pub(crate) async fn process_transcription_output(
     app: &AppHandle,
     transcription: &str,
     post_process: bool,
+    live_dictation: bool,
 ) -> ProcessedTranscription {
     let settings = get_settings(app);
     let mut final_text = transcription.to_string();
@@ -363,7 +364,11 @@ pub(crate) async fn process_transcription_output(
     if post_process {
         // Fork: a speculative cleanup of exactly this text (live dictation, opt-in) is used as is; otherwise the
         // normal post-processing call runs.
-        let speculated = crate::remote_transcription::take_speculation(&final_text).await;
+        let speculated = if live_dictation {
+            crate::remote_transcription::take_speculation(&final_text).await
+        } else {
+            None
+        };
         let processed = match speculated {
             Some(text) => Some(text),
             None => post_process_transcription(&settings, &final_text).await,
@@ -680,11 +685,7 @@ impl ShortcutAction for TranscribeAction {
                         Ok(Some(text)) if !text.trim().is_empty() => Ok(text),
                         // Fork: a live remote session that completed with "" heard no speech; uploading the
                         // same audio again would only repeat that answer.
-                        Ok(Some(text))
-                            if crate::remote_transcription::streaming_enabled(&get_settings(&ah)) =>
-                        {
-                            Ok(text)
-                        }
+                        Ok(Some(text)) if crate::remote_transcription::last_final_was_remote() => Ok(text),
                         Ok(_) => {
                             let settings = get_settings(&ah);
                             if crate::remote_transcription::enabled(&settings) {
@@ -749,7 +750,7 @@ impl ShortcutAction for TranscribeAction {
                                 }
                             }
                             let Some(processed) = complete_unless_cancelled(
-                                process_transcription_output(&ah, &transcription, post_process),
+                                process_transcription_output(&ah, &transcription, post_process, true),
                                 || rm.was_cancelled_since(cancel_generation),
                             )
                             .await

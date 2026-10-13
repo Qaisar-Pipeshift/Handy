@@ -1155,6 +1155,7 @@ impl TranscriptionManager {
                             None
                         }
                     };
+                    crate::remote_transcription::set_last_final_remote(result.is_some());
                     let _ = reply.send(result);
                     return;
                 }
@@ -1233,6 +1234,8 @@ impl TranscriptionManager {
 
     /// Abandon any active stream without producing text (e.g. on cancel).
     pub fn cancel_stream(&self) {
+        // Fork: drop any pending speculative cleanup of the cancelled dictation.
+        crate::remote_transcription::arm_speculation(false);
         if let Some(tx) = self.router.take() {
             let _ = tx.send(StreamCmd::Cancel);
         }

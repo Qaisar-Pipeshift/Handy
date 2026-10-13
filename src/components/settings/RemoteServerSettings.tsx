@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
 import { SettingContainer } from "../ui/SettingContainer";
@@ -23,19 +23,36 @@ export const RemoteEngineSettings: React.FC<RemoteSettingProps> = React.memo(
     const { getSetting, updateSetting, isUpdating } = useSettings();
     const [check, setCheck] = useState<RemoteCheck | null>(null);
     const [testing, setTesting] = useState(false);
+    const [urlError, setUrlError] = useState("");
+    // Bumped on every URL/key edit, so a test that finishes after an edit is not shown against the new values.
+    const editGeneration = useRef(0);
 
     const enabled = getSetting("remote_enabled") ?? false;
     const baseUrl = getSetting("remote_base_url") ?? "";
     const apiKey = getSetting("remote_api_key") ?? "";
 
     const runTest = async () => {
+      const generation = editGeneration.current;
       setTesting(true);
       try {
         const result = await commands.testRemoteConnection();
-        setCheck(result.status === "ok" ? result.data : null);
+        if (generation !== editGeneration.current) return;
+        setCheck(
+          result.status === "ok"
+            ? result.data
+            : { status: "unreachable", latency_ms: 0, detail: result.error },
+        );
+      } catch (error) {
+        if (generation !== editGeneration.current) return;
+        setCheck({ status: "unreachable", latency_ms: 0, detail: String(error) });
       } finally {
         setTesting(false);
       }
+    };
+
+    const fieldEdited = () => {
+      editGeneration.current += 1;
+      setCheck(null);
     };
 
     const checkMessage = check
@@ -63,17 +80,26 @@ export const RemoteEngineSettings: React.FC<RemoteSettingProps> = React.memo(
           grouped={grouped}
           layout="horizontal"
         >
-          <BaseUrlField
-            value={baseUrl}
-            onBlur={(value) => {
-              if (value.trim() !== baseUrl) {
-                setCheck(null);
-                void updateSetting("remote_base_url", value.trim());
-              }
-            }}
-            disabled={isUpdating("remote_base_url")}
-            placeholder="https://"
-          />
+          <div className="flex flex-col items-end gap-1">
+            <BaseUrlField
+              value={baseUrl}
+              onBlur={(value) => {
+                const url = value.trim();
+                if (url && !/^https?:\/\//i.test(url)) {
+                  setUrlError(t("settings.remote.baseUrl.invalid"));
+                  return;
+                }
+                setUrlError("");
+                if (url !== baseUrl) {
+                  fieldEdited();
+                  void updateSetting("remote_base_url", url);
+                }
+              }}
+              disabled={isUpdating("remote_base_url")}
+              placeholder="https://"
+            />
+            {urlError && <span className="text-xs text-red-400">{urlError}</span>}
+          </div>
         </SettingContainer>
         <SettingContainer
           title={t("settings.remote.apiKey.label")}
@@ -86,7 +112,7 @@ export const RemoteEngineSettings: React.FC<RemoteSettingProps> = React.memo(
             value={apiKey}
             onBlur={(value) => {
               if (value.trim() !== apiKey) {
-                setCheck(null);
+                fieldEdited();
                 void updateSetting("remote_api_key", value.trim());
               }
             }}

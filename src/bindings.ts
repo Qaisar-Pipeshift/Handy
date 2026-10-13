@@ -1031,7 +1031,7 @@ hold_threshold_ms?: number; audio_feedback?: boolean; audio_feedback_volume?: nu
  * Fork: transcribe on a self-hosted dictation server instead of a local model
  * (`remote_transcription.rs`). Off unless `remote_base_url` is also set.
  */
-remote_enabled?: boolean; remote_base_url?: string; remote_api_key?: string; 
+remote_enabled?: boolean; remote_base_url?: string; remote_api_key?: RemoteApiKey; 
 /**
  * Fork: stream the recording to the server while the user speaks (live text in the overlay, final text right
  * after release). Falls back to the one-shot upload on any socket failure.
@@ -1163,6 +1163,10 @@ export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_
 export type PermissionAccess = "allowed" | "denied" | "unknown"
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean }
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
+/**
+ * The remote transcription server's key: stored as a plain string, redacted in Debug output like `SecretMap`.
+ */
+export type RemoteApiKey = string
 /**
  * Result of "Test connection" in the Remote settings page; the frontend turns `status` into a translated message.
  */
