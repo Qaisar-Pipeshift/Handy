@@ -95,6 +95,19 @@ const settingUpdaters: {
     commands.changeAutostartSetting(value as boolean),
   update_checks_enabled: (value) =>
     commands.changeUpdateChecksSetting(value as boolean),
+  // Fork: remote dictation server (Settings → Advanced → Remote server).
+  remote_enabled: (value) =>
+    commands.changeRemoteEnabledSetting(value as boolean),
+  remote_base_url: async (value) => {
+    const result = await commands.changeRemoteBaseUrlSetting(value as string);
+    if (result.status === "error") {
+      throw new Error(result.error);
+    }
+  },
+  remote_api_key: (value) =>
+    commands.changeRemoteApiKeySetting(value as string),
+  remote_streaming: (value) =>
+    commands.changeRemoteStreamingSetting(value as boolean),
   show_whats_new_on_update: (value) =>
     commands.changeShowWhatsNewOnUpdateSetting(value as boolean),
   whats_new_last_seen_version: (value) =>

@@ -358,6 +358,10 @@ impl fmt::Debug for SecretMap {
 pub struct RemoteApiKey(String);
 
 impl RemoteApiKey {
+    pub fn new(key: String) -> Self {
+        Self(key)
+    }
+
     pub fn expose(&self) -> &str {
         &self.0
     }

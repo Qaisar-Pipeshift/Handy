@@ -273,3 +273,96 @@ where
         }
     }
 }
+
+// ---- Settings commands (fork): Settings → Advanced → "Remote server" ------------------------------------------------
+// Same store the app reads at every recording, so a change applies from the next recording; the tray menu is rebuilt
+// so its "Live dictation" item matches.
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_remote_enabled_setting(app: tauri::AppHandle, enabled: bool) -> std::result::Result<(), String> {
+    let mut settings = crate::settings::get_settings(&app);
+    settings.remote_enabled = enabled;
+    crate::settings::write_settings(&app, settings);
+    crate::tray::update_tray_menu(&app);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_remote_base_url_setting(app: tauri::AppHandle, url: String) -> std::result::Result<(), String> {
+    let url = url.trim().trim_end_matches('/').to_string();
+    if !url.is_empty() && !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("The server URL must start with https:// or http://".to_string());
+    }
+    let mut settings = crate::settings::get_settings(&app);
+    settings.remote_base_url = url;
+    crate::settings::write_settings(&app, settings);
+    crate::tray::update_tray_menu(&app);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_remote_api_key_setting(app: tauri::AppHandle, key: String) -> std::result::Result<(), String> {
+    let mut settings = crate::settings::get_settings(&app);
+    settings.remote_api_key = crate::settings::RemoteApiKey::new(key.trim().to_string());
+    crate::settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_remote_streaming_setting(app: tauri::AppHandle, enabled: bool) -> std::result::Result<(), String> {
+    let mut settings = crate::settings::get_settings(&app);
+    settings.remote_streaming = enabled;
+    crate::settings::write_settings(&app, settings);
+    crate::tray::update_tray_menu(&app);
+    Ok(())
+}
+
+/// Result of "Test connection" in the Remote settings page; the frontend turns `status` into a translated message.
+#[derive(Clone, Debug, serde::Serialize, specta::Type)]
+pub struct RemoteCheck {
+    pub status: RemoteCheckStatus,
+    pub latency_ms: u32,
+    /// Raw detail for the tooltip (HTTP status or error text); never contains the key.
+    pub detail: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, specta::Type)]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteCheckStatus {
+    Ok,
+    NoUrl,
+    Unauthorized,
+    HttpError,
+    Unreachable,
+}
+
+/// Reaches the server with the saved URL and key (the key-check route answers 200 for a valid key, 401 otherwise).
+#[tauri::command]
+#[specta::specta]
+pub async fn test_remote_connection(app: tauri::AppHandle) -> std::result::Result<RemoteCheck, String> {
+    let settings = crate::settings::get_settings(&app);
+    if settings.remote_base_url.trim().is_empty() {
+        return Ok(RemoteCheck { status: RemoteCheckStatus::NoUrl, latency_ms: 0, detail: String::new() });
+    }
+    let started = std::time::Instant::now();
+    let response = client()
+        .get(format!("{}/v2/transcript", base_url(&settings)))
+        .header(reqwest::header::AUTHORIZATION, settings.remote_api_key.expose())
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await;
+    let latency_ms = started.elapsed().as_millis().min(u32::MAX as u128) as u32;
+    let (status, detail) = match response {
+        Ok(r) if r.status().is_success() => (RemoteCheckStatus::Ok, r.status().to_string()),
+        Ok(r) if r.status() == reqwest::StatusCode::UNAUTHORIZED => {
+            (RemoteCheckStatus::Unauthorized, r.status().to_string())
+        }
+        Ok(r) => (RemoteCheckStatus::HttpError, r.status().to_string()),
+        Err(e) => (RemoteCheckStatus::Unreachable, e.to_string()),
+    };
+    Ok(RemoteCheck { status, latency_ms, detail })
+}

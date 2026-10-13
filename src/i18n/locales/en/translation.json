@@ -14,6 +14,7 @@
     "models": "Models",
     "advanced": "Advanced",
     "postProcessing": "Post Process",
+    "remote": "Remote",
     "history": "History",
     "debug": "Debug",
     "about": "About"
@@ -155,6 +156,43 @@
     }
   },
   "settings": {
+    "remote": {
+      "groups": {
+        "engine": "Engine",
+        "mode": "Dictation mode",
+        "cleanup": "Cleanup (LLM)"
+      },
+      "enabled": {
+        "label": "Use remote server",
+        "description": "On: transcribe on your dictation server, no local model is loaded. Off: use the local model chosen in Models."
+      },
+      "baseUrl": {
+        "label": "Server URL",
+        "description": "Base URL of the dictation server, e.g. https://your-host.example.com (no path)."
+      },
+      "apiKey": {
+        "label": "API key",
+        "description": "Sent to the server as the Authorization header."
+      },
+      "test": {
+        "label": "Connection",
+        "description": "Checks the saved URL and key against the server.",
+        "button": "Test connection",
+        "testing": "Testing…",
+        "ok": "Connected, key accepted ({{ms}} ms)",
+        "no_url": "Set the server URL first",
+        "unauthorized": "Server reached, but the API key was rejected",
+        "http_error": "Server answered {{detail}}",
+        "unreachable": "Could not reach the server"
+      },
+      "streaming": {
+        "label": "Live dictation",
+        "description": "On: stream while you speak, with live text in the overlay and the final text right after release. Off: upload the recording once at release (the original behaviour). Also in the tray menu."
+      },
+      "cleanup": {
+        "description": "Choose per dictation: the transcribe shortcut pastes raw text; the post-process shortcut sends the text to your post-processing provider first (set up on the Post Process page)."
+      }
+    },
     "modelSettings": {
       "title": "{{model}} Settings"
     },
