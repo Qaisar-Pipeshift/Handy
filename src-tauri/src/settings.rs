@@ -366,6 +366,23 @@ impl fmt::Debug for SecretMap {
     }
 }
 
+/// The remote transcription server's key: stored as a plain string, redacted in Debug output like `SecretMap`.
+#[derive(Clone, Default, Serialize, Deserialize, Type)]
+#[serde(transparent)]
+pub struct RemoteApiKey(String);
+
+impl RemoteApiKey {
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for RemoteApiKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(if self.0.is_empty() { "\"\"" } else { "[REDACTED]" })
+    }
+}
+
 impl std::ops::Deref for SecretMap {
     type Target = HashMap<String, String>;
     fn deref(&self) -> &Self::Target {
@@ -417,6 +434,14 @@ pub struct AppSettings {
     pub autostart_enabled: bool,
     #[serde(default = "default_update_checks_enabled")]
     pub update_checks_enabled: bool,
+    /// Fork: transcribe on a self-hosted dictation server instead of a local model
+    /// (`remote_transcription.rs`). Off unless `remote_base_url` is also set.
+    #[serde(default)]
+    pub remote_enabled: bool,
+    #[serde(default)]
+    pub remote_base_url: String,
+    #[serde(default)]
+    pub remote_api_key: RemoteApiKey,
     #[serde(default = "default_show_whats_new_on_update")]
     pub show_whats_new_on_update: bool,
     /// The app version whose What's New the user has already seen. Fresh installs
@@ -974,6 +999,9 @@ pub fn get_default_settings() -> AppSettings {
         start_hidden: default_start_hidden(),
         autostart_enabled: default_autostart_enabled(),
         update_checks_enabled: default_update_checks_enabled(),
+        remote_enabled: false,
+        remote_base_url: String::new(),
+        remote_api_key: RemoteApiKey::default(),
         show_whats_new_on_update: default_show_whats_new_on_update(),
         whats_new_last_seen_version: default_whats_new_last_seen_version(),
         selected_model: "".to_string(),

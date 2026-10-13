@@ -18,6 +18,7 @@ mod memory;
 mod overlay;
 mod paste_tx;
 pub mod portable;
+mod remote_transcription;
 mod secure_input;
 mod settings;
 mod shortcut;
