@@ -393,9 +393,15 @@ impl ShortcutAction for TranscribeAction {
         let tm = app.state::<Arc<TranscriptionManager>>();
         let rm = app.state::<Arc<AudioRecordingManager>>();
 
-        // Load ASR model and VAD model in parallel
+        // Load ASR model and VAD model in parallel. In remote mode (fork) there is no
+        // local model: open the server connection instead, while the user speaks.
+        let remote = crate::remote_transcription::enabled(&get_settings(app));
         let kickoff_started = Instant::now();
-        tm.initiate_model_load();
+        if remote {
+            tauri::async_runtime::spawn(crate::remote_transcription::warm(get_settings(app)));
+        } else {
+            tm.initiate_model_load();
+        }
         let rm_clone = Arc::clone(&rm);
         std::thread::spawn(move || {
             if let Err(e) = rm_clone.preload_vad() {
@@ -406,7 +412,7 @@ impl ShortcutAction for TranscribeAction {
 
         // Don't open the mic if nothing can transcribe the recording; the load
         // kicked off above fails and reports why.
-        if !tm.is_model_loaded() {
+        if !remote && !tm.is_model_loaded() {
             let selected_model = get_settings(app).selected_model;
             if let Err(e) = app
                 .state::<Arc<ModelManager>>()
@@ -434,10 +440,11 @@ impl ShortcutAction for TranscribeAction {
         // Use the app-facing model capability as the single pre-recording source
         // for live streaming decisions. Unknown support is represented as false
         // until the model registry is updated by discovery or runtime load.
-        let model_supports_streaming = selected_model_info
-            .as_ref()
-            .map(|m| m.supports_streaming)
-            .unwrap_or(false);
+        let model_supports_streaming = !remote
+            && selected_model_info
+                .as_ref()
+                .map(|m| m.supports_streaming)
+                .unwrap_or(false);
         let vad_policy = if !settings.vad_enabled {
             VadPolicy::Disabled
         } else if model_supports_streaming {
@@ -656,7 +663,20 @@ impl ShortcutAction for TranscribeAction {
                         // surfaced instead — the worker may still hold the engine,
                         // so a batch fallback would contend with it.
                         Ok(Some(text)) if !text.trim().is_empty() => Ok(text),
-                        Ok(_) => tm.transcribe(samples),
+                        Ok(_) => {
+                            let settings = get_settings(&ah);
+                            if crate::remote_transcription::enabled(&settings) {
+                                crate::remote_transcription::transcribe(&settings, &samples)
+                                    .await
+                                    .map(|text| {
+                                        crate::managers::transcription::finish_remote_text(
+                                            text, &settings,
+                                        )
+                                    })
+                            } else {
+                                tm.transcribe(samples)
+                            }
+                        }
                         Err(err) => Err(err),
                     };
 

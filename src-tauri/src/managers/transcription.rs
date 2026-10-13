@@ -1766,6 +1766,12 @@ fn transcribe_cpp_run_plan(
     }
 }
 
+/// Fork: the clean-up local transcripts get (filler removal, Chinese script), applied to text returned by the remote
+/// server. Custom words were sent to the server as key terms, so they count as already prompted.
+pub fn finish_remote_text(raw: String, settings: &AppSettings) -> String {
+    post_process_transcription_text(raw, settings, true, &OutputLanguageEvidence::Unknown, &[])
+}
+
 fn post_process_transcription_text(
     raw: String,
     settings: &AppSettings,
