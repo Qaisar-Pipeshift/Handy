@@ -1120,6 +1120,10 @@ impl TranscriptionManager {
                     tentative: tentative.to_string(),
                 }
                 .emit(&app);
+                // All text final = the speaker paused: start the opt-in speculative cleanup (no-op unless armed).
+                if tentative.is_empty() && !committed.is_empty() {
+                    crate::remote_transcription::speculate(&app, committed);
+                }
             })
             .await;
             let _ = done_tx.send(result);

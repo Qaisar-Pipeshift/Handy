@@ -160,3 +160,29 @@ export const RemoteStreamingSetting: React.FC<RemoteSettingProps> = React.memo(
 );
 
 RemoteStreamingSetting.displayName = "RemoteStreamingSetting";
+
+/** Fork, opt-in: clean the text so far at every pause (live + post-process shortcut) so release pastes at once. */
+export const RemoteSpeculativeCleanupSetting: React.FC<RemoteSettingProps> =
+  React.memo(({ descriptionMode = "tooltip", grouped = false }) => {
+    const { t } = useTranslation();
+    const { getSetting, updateSetting, isUpdating } = useSettings();
+    const available =
+      (getSetting("remote_enabled") ?? false) &&
+      (getSetting("remote_streaming") ?? true) &&
+      (getSetting("post_process_enabled") ?? false);
+
+    return (
+      <ToggleSwitch
+        checked={getSetting("remote_speculative_cleanup") ?? false}
+        onChange={(value) => updateSetting("remote_speculative_cleanup", value)}
+        isUpdating={isUpdating("remote_speculative_cleanup")}
+        disabled={!available}
+        label={t("settings.remote.speculative.label")}
+        description={t("settings.remote.speculative.description")}
+        descriptionMode={descriptionMode}
+        grouped={grouped}
+      />
+    );
+  });
+
+RemoteSpeculativeCleanupSetting.displayName = "RemoteSpeculativeCleanupSetting";

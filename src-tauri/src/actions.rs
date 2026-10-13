@@ -118,7 +118,7 @@ fn should_use_streaming_overlay(style: OverlayStyle, is_streaming: bool) -> bool
     style == OverlayStyle::Live && is_streaming
 }
 
-async fn post_process_transcription(settings: &AppSettings, transcription: &str) -> Option<String> {
+pub(crate) async fn post_process_transcription(settings: &AppSettings, transcription: &str) -> Option<String> {
     if is_blank_transcription(transcription) {
         debug!("Post-processing skipped because the transcription is empty");
         return None;
@@ -361,7 +361,14 @@ pub(crate) async fn process_transcription_output(
     let mut post_process_prompt: Option<String> = None;
 
     if post_process {
-        if let Some(processed_text) = post_process_transcription(&settings, &final_text).await {
+        // Fork: a speculative cleanup of exactly this text (live dictation, opt-in) is used as is; otherwise the
+        // normal post-processing call runs.
+        let speculated = crate::remote_transcription::take_speculation(&final_text).await;
+        let processed = match speculated {
+            Some(text) => Some(text),
+            None => post_process_transcription(&settings, &final_text).await,
+        };
+        if let Some(processed_text) = processed {
             post_processed_text = Some(processed_text.clone());
             final_text = processed_text;
 
@@ -456,6 +463,10 @@ impl ShortcutAction for TranscribeAction {
         } else {
             VadPolicy::Offline
         };
+        // Fork: speculative cleanup only for the post-process shortcut in live remote mode, when opted in.
+        crate::remote_transcription::arm_speculation(
+            remote_streaming && self.post_process && settings.remote_speculative_cleanup,
+        );
         if model_supports_streaming {
             tm.start_stream();
         }
@@ -667,6 +678,13 @@ impl ShortcutAction for TranscribeAction {
                         // surfaced instead — the worker may still hold the engine,
                         // so a batch fallback would contend with it.
                         Ok(Some(text)) if !text.trim().is_empty() => Ok(text),
+                        // Fork: a live remote session that completed with "" heard no speech; uploading the
+                        // same audio again would only repeat that answer.
+                        Ok(Some(text))
+                            if crate::remote_transcription::streaming_enabled(&get_settings(&ah)) =>
+                        {
+                            Ok(text)
+                        }
                         Ok(_) => {
                             let settings = get_settings(&ah);
                             if crate::remote_transcription::enabled(&settings) {

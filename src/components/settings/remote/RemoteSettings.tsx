@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import {
   RemoteEngineSettings,
+  RemoteSpeculativeCleanupSetting,
   RemoteStreamingSetting,
 } from "../RemoteServerSettings";
 import { PostProcessingToggle } from "../PostProcessingToggle";
@@ -42,6 +43,12 @@ export const RemoteSettings: React.FC = () => {
         {postProcessEnabled && (
           <ShortcutInput
             shortcutId="transcribe_with_post_process"
+            descriptionMode="tooltip"
+            grouped={true}
+          />
+        )}
+        {postProcessEnabled && (
+          <RemoteSpeculativeCleanupSetting
             descriptionMode="tooltip"
             grouped={true}
           />

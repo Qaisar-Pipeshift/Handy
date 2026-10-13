@@ -108,6 +108,8 @@ const settingUpdaters: {
     commands.changeRemoteApiKeySetting(value as string),
   remote_streaming: (value) =>
     commands.changeRemoteStreamingSetting(value as boolean),
+  remote_speculative_cleanup: (value) =>
+    commands.changeRemoteSpeculativeCleanupSetting(value as boolean),
   show_whats_new_on_update: (value) =>
     commands.changeShowWhatsNewOnUpdateSetting(value as boolean),
   whats_new_last_seen_version: (value) =>

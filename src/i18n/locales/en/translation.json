@@ -191,6 +191,10 @@
       },
       "cleanup": {
         "description": "Choose per dictation: the transcribe shortcut pastes raw text; the post-process shortcut sends the text to your post-processing provider first (set up on the Post Process page)."
+      },
+      "speculative": {
+        "label": "Clean while I pause",
+        "description": "Live dictation + post-process shortcut only. At every pause the whole text so far is cleaned in the background with your normal post-processing; if you release without saying more, the cleaned text pastes at once. Same quality as normal cleanup; uses extra LLM calls. Off = clean once after release."
       }
     },
     "modelSettings": {

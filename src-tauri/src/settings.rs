@@ -436,6 +436,10 @@ pub struct AppSettings {
     /// after release). Falls back to the one-shot upload on any socket failure.
     #[serde(default = "default_remote_streaming")]
     pub remote_streaming: bool,
+    /// Fork, opt-in: with live dictation and the post-process shortcut, clean the text so far at every pause so the
+    /// cleaned result is ready at release when nothing new was said (`remote_transcription::speculate`).
+    #[serde(default)]
+    pub remote_speculative_cleanup: bool,
     #[serde(default = "default_show_whats_new_on_update")]
     pub show_whats_new_on_update: bool,
     /// The app version whose What's New the user has already seen. Fresh installs
@@ -981,6 +985,7 @@ pub fn get_default_settings() -> AppSettings {
         remote_base_url: String::new(),
         remote_api_key: RemoteApiKey::default(),
         remote_streaming: default_remote_streaming(),
+        remote_speculative_cleanup: false,
         show_whats_new_on_update: default_show_whats_new_on_update(),
         whats_new_last_seen_version: default_whats_new_last_seen_version(),
         selected_model: "".to_string(),

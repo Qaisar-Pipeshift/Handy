@@ -391,6 +391,14 @@ async changeRemoteStreamingSetting(enabled: boolean) : Promise<Result<null, stri
     else return { status: "error", error: e  as any };
 }
 },
+async changeRemoteSpeculativeCleanupSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_remote_speculative_cleanup_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async testRemoteConnection() : Promise<Result<RemoteCheck, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("test_remote_connection") };
@@ -1028,7 +1036,12 @@ remote_enabled?: boolean; remote_base_url?: string; remote_api_key?: string;
  * Fork: stream the recording to the server while the user speaks (live text in the overlay, final text right
  * after release). Falls back to the one-shot upload on any socket failure.
  */
-remote_streaming?: boolean; show_whats_new_on_update?: boolean; 
+remote_streaming?: boolean; 
+/**
+ * Fork, opt-in: with live dictation and the post-process shortcut, clean the text so far at every pause so the
+ * cleaned result is ready at release when nothing new was said (`remote_transcription::speculate`).
+ */
+remote_speculative_cleanup?: boolean; show_whats_new_on_update?: boolean; 
 /**
  * The app version whose What's New the user has already seen. Fresh installs
  * default to the current version (nothing is "new" to them). Existing users
