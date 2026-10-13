@@ -841,6 +841,13 @@ impl TranscriptionManager {
             stream_active: Arc::clone(&self.stream_active),
         };
 
+        // Fork: live dictation on the remote server needs no local engine.
+        let remote_settings = get_settings(&self.app_handle);
+        if crate::remote_transcription::streaming_enabled(&remote_settings) {
+            self.run_remote_stream(rx, remote_settings);
+            return;
+        }
+
         // Wait for any in-progress model load to finish (start_stream races the
         // background load kicked off when recording starts).
         {
@@ -1097,6 +1104,66 @@ impl TranscriptionManager {
         // the engine has been returned to the pool.
     }
 
+    /// Fork: live dictation on the remote server (`remote_transcription::live_session`). Frames go up as they
+    /// arrive, the overlay shows the server's live text, and Finalize waits for the server's final text. Any failure
+    /// replies `None`, so the caller uploads the same recording in one shot instead — a take is never lost.
+    fn run_remote_stream(&self, rx: mpsc::Receiver<StreamCmd>, settings: AppSettings) {
+        use crate::remote_transcription::{live_session, LiveAudio, LIVE_FINAL_TIMEOUT};
+
+        let (audio_tx, audio_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (done_tx, done_rx) = mpsc::channel::<Result<String>>();
+        let app = self.app_handle.clone();
+        let session = tauri::async_runtime::spawn(async move {
+            let result = live_session(settings, audio_rx, move |committed: &str, tentative: &str| {
+                let _ = StreamTextEvent {
+                    committed: committed.to_string(),
+                    tentative: tentative.to_string(),
+                }
+                .emit(&app);
+            })
+            .await;
+            let _ = done_tx.send(result);
+        });
+        self.stream_active.store(true, Ordering::Release);
+        info!("Live remote transcription started");
+
+        while let Ok(cmd) = rx.recv() {
+            match cmd {
+                StreamCmd::Feed(pcm) => {
+                    self.touch_activity();
+                    let _ = audio_tx.send(LiveAudio::Frame(pcm));
+                }
+                StreamCmd::Finalize(reply) => {
+                    let _ = audio_tx.send(LiveAudio::Commit);
+                    let result = match done_rx.recv_timeout(LIVE_FINAL_TIMEOUT) {
+                        Ok(Ok(text)) => Some(FinalizedStreamText {
+                            text,
+                            output_language: OutputLanguageEvidence::Unknown,
+                            supported_languages: Vec::new(),
+                        }),
+                        Ok(Err(e)) => {
+                            warn!("Live remote transcription failed ({e}); uploading the recording instead");
+                            None
+                        }
+                        Err(_) => {
+                            warn!("Live remote transcription timed out; uploading the recording instead");
+                            session.abort();
+                            None
+                        }
+                    };
+                    let _ = reply.send(result);
+                    return;
+                }
+                StreamCmd::Cancel => {
+                    let _ = audio_tx.send(LiveAudio::Cancel);
+                    return;
+                }
+            }
+        }
+        // The route was cleared without a finalize/cancel handshake.
+        let _ = audio_tx.send(LiveAudio::Cancel);
+    }
+
     /// Return the leased engine to the mutex, unless the model was switched or
     /// unloaded during transcription (in which case the stale engine is dropped).
     fn return_engine(&self, engine: LoadedEngine, expected_model_id: &str) {
@@ -1142,14 +1209,19 @@ impl TranscriptionManager {
 
         let settings = get_settings(&self.app_handle);
         // Streaming models do not receive a decode prompt, so custom words
-        // always go through the shared fuzzy post-correction path.
-        let filtered = post_process_transcription_text(
-            finalized.text,
-            &settings,
-            false,
-            &finalized.output_language,
-            &finalized.supported_languages,
-        );
+        // always go through the shared fuzzy post-correction path. Fork: the
+        // remote server was given them as key terms, like the one-shot upload.
+        let filtered = if crate::remote_transcription::streaming_enabled(&settings) {
+            finish_remote_text(finalized.text, &settings)
+        } else {
+            post_process_transcription_text(
+                finalized.text,
+                &settings,
+                false,
+                &finalized.output_language,
+                &finalized.supported_languages,
+            )
+        };
 
         self.maybe_unload_immediately("streaming transcription");
         Ok(Some(filtered))

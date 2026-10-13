@@ -428,6 +428,10 @@ pub struct AppSettings {
     pub remote_base_url: String,
     #[serde(default)]
     pub remote_api_key: RemoteApiKey,
+    /// Fork: stream the recording to the server while the user speaks (live text in the overlay, final text right
+    /// after release). Falls back to the one-shot upload on any socket failure.
+    #[serde(default = "default_remote_streaming")]
+    pub remote_streaming: bool,
     #[serde(default = "default_show_whats_new_on_update")]
     pub show_whats_new_on_update: bool,
     /// The app version whose What's New the user has already seen. Fresh installs
@@ -585,6 +589,10 @@ fn default_start_hidden() -> bool {
 
 fn default_autostart_enabled() -> bool {
     false
+}
+
+fn default_remote_streaming() -> bool {
+    true
 }
 
 fn default_update_checks_enabled() -> bool {
@@ -968,6 +976,7 @@ pub fn get_default_settings() -> AppSettings {
         remote_enabled: false,
         remote_base_url: String::new(),
         remote_api_key: RemoteApiKey::default(),
+        remote_streaming: default_remote_streaming(),
         show_whats_new_on_update: default_show_whats_new_on_update(),
         whats_new_last_seen_version: default_whats_new_last_seen_version(),
         selected_model: "".to_string(),
