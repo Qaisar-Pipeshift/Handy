@@ -1181,27 +1181,7 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
     // Settings reads also persist one-time migrations. Migration helpers are
     // idempotent, so this converges after the first read of an older store.
     let mut settings = if let Some(settings_value) = store.get("settings") {
-        let (mut settings, mut updated) =
-            match serde_json::from_value::<AppSettings>(settings_value.clone()) {
-                Ok(settings) => (settings, false),
-                Err(e) => {
-                    warn!("Failed to parse stored settings ({e}); salvaging valid fields");
-                    (salvage_settings(&settings_value), true)
-                }
-            };
-
-        if apply_settings_migrations(&mut settings, &settings_value) {
-            updated = true;
-        }
-
-        // Merge in any bindings added since this store was written.
-        for (key, value) in get_default_settings().bindings {
-            if let std::collections::hash_map::Entry::Vacant(entry) = settings.bindings.entry(key) {
-                debug!("Adding missing binding: {}", entry.key());
-                entry.insert(value);
-                updated = true;
-            }
-        }
+        let (settings, updated) = settings_from_store(&settings_value);
 
         if updated {
             store.set("settings", serde_json::to_value(&settings).unwrap());
@@ -1219,6 +1199,36 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
     }
 
     settings
+}
+
+/// A stored settings object as every read sees it: parsed (salvaging its
+/// valid fields if it doesn't parse as a whole), migrated, and given any
+/// bindings added since it was written. `true` when that changed it, so the
+/// store needs rewriting.
+fn settings_from_store(settings_value: &serde_json::Value) -> (AppSettings, bool) {
+    let (mut settings, mut updated) =
+        match serde_json::from_value::<AppSettings>(settings_value.clone()) {
+            Ok(settings) => (settings, false),
+            Err(e) => {
+                warn!("Failed to parse stored settings ({e}); salvaging valid fields");
+                (salvage_settings(settings_value), true)
+            }
+        };
+
+    if apply_settings_migrations(&mut settings, settings_value) {
+        updated = true;
+    }
+
+    // Merge in any bindings added since this store was written.
+    for (key, value) in get_default_settings().bindings {
+        if let std::collections::hash_map::Entry::Vacant(entry) = settings.bindings.entry(key) {
+            debug!("Adding missing binding: {}", entry.key());
+            entry.insert(value);
+            updated = true;
+        }
+    }
+
+    (settings, updated)
 }
 
 /// Rebuilds settings from a store value that failed to deserialize as a whole.
@@ -1561,6 +1571,9 @@ pub fn get_recording_retention_period(app: &AppHandle) -> RecordingRetentionPeri
     let settings = get_settings(app);
     settings.recording_retention_period
 }
+
+#[cfg(test)]
+mod remote_store_golden;
 
 #[cfg(test)]
 mod tests {
