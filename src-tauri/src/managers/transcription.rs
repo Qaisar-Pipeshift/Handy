@@ -852,6 +852,13 @@ impl TranscriptionManager {
             stream_active: Arc::clone(&self.stream_active),
         };
 
+        // Fork: live dictation on the remote server needs no local engine.
+        let settings = get_settings(&self.app_handle);
+        if crate::remote_transcription::streaming_enabled(&settings) {
+            self.run_remote_stream(rx, cancelled, settings);
+            return;
+        }
+
         // Wait for any in-progress model load to finish (start_stream races the
         // background load kicked off when recording starts).
         {

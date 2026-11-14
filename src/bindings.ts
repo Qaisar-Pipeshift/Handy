@@ -1129,7 +1129,12 @@ hold_threshold_ms?: number; audio_feedback?: boolean; audio_feedback_volume?: nu
  * Fork: transcribe on a self-hosted dictation server instead of a local model
  * (`remote_transcription.rs`). Off unless `remote_base_url` is also set.
  */
-remote_enabled?: boolean; remote_base_url?: string; remote_api_key?: RemoteApiKey; show_whats_new_on_update?: boolean; 
+remote_enabled?: boolean; remote_base_url?: string; remote_api_key?: RemoteApiKey; 
+/**
+ * Fork: stream the recording to the server while the user speaks (live text in the overlay, final text right
+ * after release). Falls back to the one-shot upload on any socket failure.
+ */
+remote_streaming?: boolean; show_whats_new_on_update?: boolean; 
 /**
  * The app version whose What's New the user has already seen. Fresh installs
  * default to the current version (nothing is "new" to them). Existing users
