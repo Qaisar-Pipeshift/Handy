@@ -1124,7 +1124,12 @@ shortcut_activation?: ShortcutActivation;
  * Hold-or-toggle only: a press held at least this long is push-to-talk,
  * anything shorter is a tap that locks recording on.
  */
-hold_threshold_ms?: number; audio_feedback?: boolean; audio_feedback_volume?: number; sound_theme?: SoundTheme; start_hidden?: boolean; autostart_enabled?: boolean; update_checks_enabled?: boolean; show_whats_new_on_update?: boolean; 
+hold_threshold_ms?: number; audio_feedback?: boolean; audio_feedback_volume?: number; sound_theme?: SoundTheme; start_hidden?: boolean; autostart_enabled?: boolean; update_checks_enabled?: boolean; 
+/**
+ * Fork: transcribe on a self-hosted dictation server instead of a local model
+ * (`remote_transcription.rs`). Off unless `remote_base_url` is also set.
+ */
+remote_enabled?: boolean; remote_base_url?: string; remote_api_key?: RemoteApiKey; show_whats_new_on_update?: boolean; 
 /**
  * The app version whose What's New the user has already seen. Fresh installs
  * default to the current version (nothing is "new" to them). Existing users
@@ -1429,6 +1434,10 @@ export type RecordingPhase =
 "cancelled"
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
 export type RecordingStateEvent = { phase: RecordingPhase }
+/**
+ * The remote transcription server's key: stored as a plain string, redacted in Debug output like `SecretMap`.
+ */
+export type RemoteApiKey = string
 /**
  * A retired ONNX model found on disk.
  */

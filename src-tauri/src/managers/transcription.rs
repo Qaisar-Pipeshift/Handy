@@ -39,6 +39,7 @@ mod chunked;
 mod job;
 mod live;
 pub mod policy;
+mod remote;
 
 pub use job::ChunkControl;
 

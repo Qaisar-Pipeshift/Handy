@@ -184,10 +184,14 @@ function App() {
       const currentPlatform = platform();
 
       if (hasCompletedOnboarding) {
-        // Returning user - check if they need to grant permissions first
-        const retiredModelId = await getMigrationModelId(
-          settingsResult.data.selected_model ?? "",
-        );
+        // Returning user - check if they need to grant permissions first.
+        // Fork: the remote server transcribes, so no local model needs updating.
+        const remote =
+          (settingsResult.data.remote_enabled ?? false) &&
+          (settingsResult.data.remote_base_url ?? "").trim() !== "";
+        const retiredModelId = remote
+          ? null
+          : await getMigrationModelId(settingsResult.data.selected_model ?? "");
         setMigrationModelId(retiredModelId);
 
         if (currentPlatform === "macos") {
