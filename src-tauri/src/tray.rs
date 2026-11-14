@@ -72,6 +72,9 @@ struct MenuInputs {
     update_checks_enabled: bool,
     /// The language submenu, when the selected model has languages to pick.
     language: Option<LanguageMenu>,
+    /// Fork: `Some(on)` when the remote server is configured: the "Live dictation" toggle and
+    /// its state.
+    remote_live: Option<bool>,
 }
 
 /// What the language submenu shows: `(code, name)` entries, with codes as
@@ -364,6 +367,8 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
         .map(|m| (m.id, m.name))
         .collect();
     downloaded_models.sort_by(|a, b| a.1.cmp(&b.1));
+    let remote_live =
+        crate::remote_transcription::enabled(&settings).then_some(settings.remote_streaming);
     // The busy menu has no language submenu, so skip the detector lookup (a
     // disk probe) on the dictation path. Going idle rebuilds it fresh.
     let model_manager = app.state::<Arc<ModelManager>>();
@@ -394,6 +399,7 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
             locale: settings.app_language,
             update_checks_enabled: settings.update_checks_enabled,
             language,
+            remote_live,
         },
     }
 }
@@ -755,6 +761,20 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
         if let Some(language) = &inputs.language {
             menu.insert(&language_submenu(app, &strings, language)?, 5)?;
         }
+        // Fork: one-click switch between live (streamed) and one-shot remote dictation; takes
+        // effect on the next recording. Placed above the model submenu.
+        if let Some(live) = inputs.remote_live {
+            let live_i = CheckMenuItem::with_id(
+                app,
+                "live_dictation",
+                "Live dictation",
+                true,
+                live,
+                None::<&str>,
+            )?;
+            menu.insert(&live_i, 4)?;
+            menu.insert(&separator()?, 5)?;
+        }
         menu
     };
 
@@ -989,6 +1009,7 @@ mod tests {
             locale: "en".to_string(),
             update_checks_enabled: true,
             language: None,
+            remote_live: None,
         }
     }
 
