@@ -391,6 +391,46 @@ async changeLazyStreamCloseSetting(enabled: boolean) : Promise<Result<null, stri
     else return { status: "error", error: e  as any };
 }
 },
+async changeRemoteEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_remote_enabled_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeRemoteBaseUrlSetting(url: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_remote_base_url_setting", { url }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeRemoteApiKeySetting(key: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_remote_api_key_setting", { key }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeRemoteStreamingSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_remote_streaming_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async testRemoteConnection() : Promise<Result<RemoteCheck, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("test_remote_connection") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeVadEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_vad_enabled_setting", { enabled }) };
@@ -1443,6 +1483,15 @@ export type RecordingStateEvent = { phase: RecordingPhase }
  * The remote transcription server's key: stored as a plain string, redacted in Debug output like `SecretMap`.
  */
 export type RemoteApiKey = string
+/**
+ * Result of "Test connection" in the Remote settings page; the frontend turns `status` into a translated message.
+ */
+export type RemoteCheck = { status: RemoteCheckStatus; latency_ms: number; 
+/**
+ * Raw detail for the tooltip (HTTP status or error text); never contains the key.
+ */
+detail: string }
+export type RemoteCheckStatus = "ok" | "no_url" | "unauthorized" | "http_error" | "unreachable"
 /**
  * A retired ONNX model found on disk.
  */
