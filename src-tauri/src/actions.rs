@@ -811,7 +811,10 @@ impl ShortcutAction for TranscribeAction {
                     let transcription_time = Instant::now();
                     let transcription_result =
                         if crate::remote_transcription::enabled(&get_settings(&ah)) {
-                            tm.transcribe_remote_recording(samples).await
+                            tm.transcribe_remote_recording(samples, || {
+                                rm.was_cancelled_since(cancel_generation)
+                            })
+                            .await
                         } else {
                             tm.transcribe_recording(samples)
                         };

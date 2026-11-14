@@ -59,7 +59,13 @@ impl TranscriptionManager {
     /// Transcribe a finished recording on the remote server: what its live decode produced, or else
     /// the recording uploaded in one shot. The remote counterpart of `transcribe_recording`; async
     /// because the upload is a request.
-    pub async fn transcribe_remote_recording(&self, samples: Vec<f32>) -> Result<Transcription> {
+    /// `cancelled` is checked between the live finalize and the one-shot upload: a cancel pressed
+    /// while the live decode finalizes must not send the recording to the server.
+    pub async fn transcribe_remote_recording(
+        &self,
+        samples: Vec<f32>,
+        cancelled: impl Fn() -> bool + Send,
+    ) -> Result<Transcription> {
         let started = Instant::now();
         // Finalizing waits for the live decode's reply, so it runs off the async runtime.
         let manager = self.clone();
@@ -71,6 +77,9 @@ impl TranscriptionManager {
         let outcome = match live {
             Some(outcome) => outcome,
             None => {
+                if cancelled() {
+                    anyhow::bail!("remote transcription cancelled before the upload");
+                }
                 let settings = get_settings(&self.app_handle);
                 let text = crate::remote_transcription::transcribe(&settings, &samples).await?;
                 RunOutcome::remote(text, &settings)
