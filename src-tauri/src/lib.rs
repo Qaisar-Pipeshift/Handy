@@ -752,6 +752,7 @@ pub fn run(cli_args: CliArgs) {
             remote_transcription::change_remote_base_url_setting,
             remote_transcription::change_remote_api_key_setting,
             remote_transcription::change_remote_streaming_setting,
+            remote_transcription::change_remote_speculative_cleanup_setting,
             remote_transcription::test_remote_connection,
             shortcut::change_vad_enabled_setting,
             shortcut::change_long_form_chunking_setting,

@@ -42,6 +42,7 @@ pub mod policy;
 mod remote;
 
 pub use job::ChunkControl;
+pub use remote::finish_remote_text;
 
 const STREAM_PERF_LOG_INTERVAL: Duration = Duration::from_secs(5);
 
@@ -959,6 +960,8 @@ impl TranscriptionManager {
     /// Abandon any live decode without producing text (e.g. on cancel). A
     /// chunk already decoding finishes; audio queued behind it is dropped.
     pub fn cancel_stream(&self) {
+        // Fork: drop any pending speculative cleanup of the cancelled dictation.
+        crate::remote_transcription::arm_speculation(false);
         if let Some(route) = self.router.take() {
             route.cancelled.store(true, Ordering::Release);
             let _ = route.tx.send(StreamCmd::Cancel);

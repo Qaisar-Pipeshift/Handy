@@ -13,8 +13,8 @@ use log::{info, warn};
 use transcribe_cpp::RunOptions;
 
 use super::{
-    echoes_vocabulary, emit_stream_text, RunOutcome, RunSetup, StreamCmd, Transcription,
-    TranscriptionManager,
+    echoes_vocabulary, emit_stream_text, finish_text, RunOutcome, RunSetup, StreamCmd,
+    Transcription, TranscriptionManager,
 };
 use crate::language_detection::{LanguageDecision, LanguageSource};
 use crate::remote_transcription::{live_session, LiveAudio, LIVE_FINAL_TIMEOUT};
@@ -47,6 +47,12 @@ impl RunOutcome {
             model_detected_language: None,
         }
     }
+}
+
+/// The text a remote transcript `raw` ends up as, exactly as `complete` finishes it. The
+/// speculative cleanup cleans this text, so it can tell whether the final text is the same.
+pub fn finish_remote_text(raw: String, settings: &AppSettings) -> String {
+    finish_text(RunOutcome::remote(raw, settings), settings)
 }
 
 impl TranscriptionManager {
@@ -90,6 +96,11 @@ impl TranscriptionManager {
         let session = tauri::async_runtime::spawn(async move {
             let result = live_session(settings, audio_rx, move |committed: &str, tentative: &str| {
                 emit_stream_text(&app, committed, tentative);
+                // All text final = the speaker paused: start the opt-in speculative cleanup
+                // (a no-op unless armed).
+                if tentative.is_empty() && !committed.is_empty() {
+                    crate::remote_transcription::speculate(&app, committed);
+                }
             })
             .await;
             let _ = done_tx.send(result);

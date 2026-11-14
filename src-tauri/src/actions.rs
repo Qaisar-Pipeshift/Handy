@@ -209,7 +209,7 @@ fn should_use_streaming_overlay(style: OverlayStyle, is_streaming: bool) -> bool
 
 /// What became of a transcription's post-processing.
 #[derive(Debug, PartialEq, Eq)]
-enum PostProcessOutcome {
+pub(crate) enum PostProcessOutcome {
     /// There was no speech to process.
     Skipped,
     Done(String),
@@ -218,7 +218,7 @@ enum PostProcessOutcome {
     Failed,
 }
 
-async fn post_process_transcription(
+pub(crate) async fn post_process_transcription(
     settings: &AppSettings,
     transcription: &str,
 ) -> PostProcessOutcome {
@@ -455,10 +455,13 @@ pub(crate) struct ProcessedTranscription {
     pub post_process_failed: bool,
 }
 
+/// `dictation`: the text comes from a dictation that just ended (not a background job), so a
+/// speculative cleanup of it (fork, `remote_transcription::post_process`) may stand in.
 pub(crate) async fn process_transcription_output(
     app: &AppHandle,
     transcription: &str,
     post_process: bool,
+    dictation: bool,
 ) -> ProcessedTranscription {
     let settings = get_settings(app);
     let mut final_text = transcription.to_string();
@@ -470,7 +473,7 @@ pub(crate) async fn process_transcription_output(
         // A reply that's blank once cleaned is no better than none.
         let outcome = match tokio::time::timeout(
             POST_PROCESS_TIMEOUT,
-            post_process_transcription(&settings, &final_text),
+            crate::remote_transcription::post_process(&settings, &final_text, dictation),
         )
         .await
         {
@@ -594,6 +597,11 @@ impl ShortcutAction for TranscribeAction {
         } else {
             VadPolicy::Offline
         };
+        // Fork: speculative cleanup only for the post-process shortcut in live remote mode, when
+        // opted in.
+        crate::remote_transcription::arm_speculation(
+            remote_streaming && self.post_process && settings.remote_speculative_cleanup,
+        );
         // Before the model loads, whether it keeps its accuracy on long audio
         // is unknown, so assume not: the worker decides again with the loaded
         // model, and a wrong guess costs only an idle worker.
@@ -858,7 +866,12 @@ impl ShortcutAction for TranscribeAction {
                                 }
                             }
                             let Some(processed) = complete_unless_cancelled(
-                                process_transcription_output(&ah, &transcription, post_process),
+                                process_transcription_output(
+                                    &ah,
+                                    &transcription,
+                                    post_process,
+                                    true,
+                                ),
                                 || rm.was_cancelled_since(cancel_generation),
                             )
                             .await

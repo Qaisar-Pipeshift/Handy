@@ -8,7 +8,8 @@
 //! local model is loaded (see `actions.rs`) and the transcript finishes like a local one
 //! (`managers::transcription::remote`).
 
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Result};
@@ -19,6 +20,7 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
 use tokio_tungstenite::tungstenite::Message;
 
+use crate::actions::PostProcessOutcome;
 use crate::settings::AppSettings;
 
 /// Handy's recorder delivers 16 kHz mono f32, the same input `TranscriptionManager::transcribe`
@@ -397,4 +399,112 @@ pub async fn test_remote_connection(
         latency_ms,
         detail,
     })
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_remote_speculative_cleanup_setting(
+    app: tauri::AppHandle,
+    enabled: bool,
+) -> std::result::Result<(), String> {
+    let mut settings = crate::settings::get_settings(&app);
+    settings.remote_speculative_cleanup = enabled;
+    crate::settings::write_settings(&app, settings);
+    Ok(())
+}
+
+// ---- Speculative cleanup (fork, opt-in: remote_speculative_cleanup) ------------------------------
+//
+// With the post-process shortcut and live dictation, every time the speaker pauses with all text
+// final (the server's preview has no tentative part), Handy runs its own post-processing call on
+// the whole text so far, in the background: the same provider, prompt and model as the normal
+// path. On release, if the final text equals what was cleaned, that result is used at once;
+// otherwise the normal post-processing runs. Quality is identical by construction (always the
+// full transcript); only the timing changes.
+
+struct Speculation {
+    input: String,
+    handle: tauri::async_runtime::JoinHandle<Option<String>>,
+}
+
+static SPEC_ARMED: AtomicBool = AtomicBool::new(false);
+static SPECULATION: Mutex<Option<Speculation>> = Mutex::new(None);
+
+/// Called at recording start: arm for this dictation (post-process shortcut + live + opt-in) and
+/// drop any leftover.
+pub fn arm_speculation(on: bool) {
+    SPEC_ARMED.store(on, Ordering::Release);
+    if let Some(old) = SPECULATION.lock().unwrap_or_else(|e| e.into_inner()).take() {
+        old.handle.abort();
+    }
+}
+
+/// Called for a live preview whose text is all final: clean the whole text so far in the
+/// background.
+pub fn speculate(app: &tauri::AppHandle, committed_raw: &str) {
+    if !SPEC_ARMED.load(Ordering::Acquire) {
+        return;
+    }
+    let settings = crate::settings::get_settings(app);
+    // The text the release would produce from this preview, so the two compare equal.
+    let input =
+        crate::managers::transcription::finish_remote_text(committed_raw.to_string(), &settings);
+    if input.trim().is_empty() {
+        return;
+    }
+    let mut slot = SPECULATION.lock().unwrap_or_else(|e| e.into_inner());
+    if slot.as_ref().is_some_and(|s| s.input == input) {
+        return;
+    }
+    if let Some(stale) = slot.take() {
+        stale.handle.abort();
+    }
+    let text = input.clone();
+    let handle = tauri::async_runtime::spawn(async move {
+        match crate::actions::post_process_transcription(&settings, &text).await {
+            PostProcessOutcome::Done(cleaned) => Some(cleaned),
+            PostProcessOutcome::Skipped | PostProcessOutcome::Failed => None,
+        }
+    });
+    *slot = Some(Speculation { input, handle });
+}
+
+/// At release: the cleaned text if the last speculation ran on exactly `final_text` (waiting for
+/// it if it is still running — it is the same request the normal path would make), else None and
+/// the normal path runs.
+async fn take_speculation(final_text: &str) -> Option<String> {
+    SPEC_ARMED.store(false, Ordering::Release);
+    let mut spec = SPECULATION
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take()?;
+    if spec.input != final_text {
+        spec.handle.abort();
+        return None;
+    }
+    match tokio::time::timeout(Duration::from_secs(20), &mut spec.handle).await {
+        Ok(Ok(cleaned)) => cleaned,
+        Ok(Err(_)) => None,
+        Err(_) => {
+            // Still running after 20 s: stop it so it does not race the normal call that follows.
+            spec.handle.abort();
+            None
+        }
+    }
+}
+
+/// A transcription's post-processing (`actions::process_transcription_output`). For a dictation, a
+/// speculative cleanup of exactly `text` stands in for the call, and its result is held to the
+/// same rules as the call's; otherwise the call runs.
+pub(crate) async fn post_process(
+    settings: &AppSettings,
+    text: &str,
+    dictation: bool,
+) -> PostProcessOutcome {
+    if dictation {
+        if let Some(cleaned) = take_speculation(text).await {
+            return PostProcessOutcome::Done(cleaned);
+        }
+    }
+    crate::actions::post_process_transcription(settings, text).await
 }
