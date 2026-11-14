@@ -69,16 +69,39 @@ jobs:
         working-directory: src-tauri
         run: cargo test --lib
 
-      # PLACEHOLDER, disabled: a fixed signing identity. Ad-hoc signing gives every build a new
-      # designated requirement (its cdhash, printed below), so macOS asks again for Accessibility
-      # and Microphone after each update. To keep those grants across updates, import one stable
-      # certificate here (self-signed or Developer ID, from repository secrets) and pass its name
-      # to the build step as APPLE_SIGNING_IDENTITY. No secret is referenced until then.
-      - name: Import fixed signing certificate (placeholder)
-        if: ${{ false }}
-        run: echo "Not set up yet; see the comment above this step."
+      # A fixed signing identity (self-signed, from repository secrets). Ad-hoc signing gives every
+      # build a new designated requirement (its cdhash), so macOS forgets the Accessibility,
+      # Microphone and Automation grants after each update; one stable certificate keeps them.
+      # Without the secrets (e.g. a fork of this fork) the build stays ad-hoc signed.
+      - name: Import fixed signing certificate
+        id: sign
+        env:
+          P12_B64: ${{ secrets.HANDY_SIGN_P12_B64 }}
+          P12_PASSWORD: ${{ secrets.HANDY_SIGN_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${P12_B64}" ]; then echo "No signing secrets: ad-hoc build"; exit 0; fi
+          KC="$RUNNER_TEMP/handy-sign.keychain-db"
+          KC_PW=$(openssl rand -hex 16)
+          printf '%s' "$P12_B64" | base64 --decode > "$RUNNER_TEMP/sign.p12"
+          security create-keychain -p "$KC_PW" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KC_PW" "$KC"
+          security import "$RUNNER_TEMP/sign.p12" -k "$KC" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/sign.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PW" "$KC" >/dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          # Self-signed: trust it for code signing on this runner only.
+          security find-certificate -c "Handy Remote Self-Signed" -p "$KC" > "$RUNNER_TEMP/sign.pem"
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$RUNNER_TEMP/sign.pem" \
+            || echo "::warning::could not mark the certificate trusted; signing may still work"
+          security find-identity -p codesigning "$KC"
+          # The SHA-1 of the certificate names the identity exactly (no name lookup ambiguity).
+          HASH=$(openssl x509 -in "$RUNNER_TEMP/sign.pem" -noout -fingerprint -sha1 | cut -d= -f2 | tr -d ':')
+          echo "APPLE_SIGNING_IDENTITY=$HASH" >> "$GITHUB_ENV"
+          echo "keychain=$KC" >> "$GITHUB_OUTPUT"
 
-      - name: Build (ad-hoc signed)
+      - name: Build
         run: bun run tauri build --target aarch64-apple-darwin
 
       - name: Verify and package
@@ -94,10 +117,24 @@ jobs:
           cp "$DMG" Handy-Remote-aarch64.dmg
           shasum -a 256 Handy-Remote-aarch64.dmg | tee Handy-Remote-aarch64.dmg.sha256
 
-      # The requirement macOS checks permission grants against. With ad-hoc signing it is the
-      # cdhash, so it changes with every build.
-      - name: Show designated requirement
-        run: codesign -d -r- "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Handy Remote.app"
+      # The requirement macOS checks permission grants against. Signed with the fixed certificate it
+      # must name the certificate (stable across builds), never a cdhash (new every build).
+      - name: Check designated requirement
+        run: |
+          set -euo pipefail
+          APP="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Handy Remote.app"
+          codesign -d -r- "$APP" 2>&1 | tee "$RUNNER_TEMP/dr.txt"
+          if [ -n "${APPLE_SIGNING_IDENTITY:-}" ]; then
+            if grep -q 'certificate' "$RUNNER_TEMP/dr.txt" && ! grep -q 'cdhash' "$RUNNER_TEMP/dr.txt"; then
+              echo "designated requirement is tied to the fixed certificate"
+            else
+              echo "::error::designated requirement is not tied to the fixed certificate"; exit 1
+            fi
+          fi
+
+      - name: Remove signing keychain
+        if: always() && steps.sign.outputs.keychain != ''
+        run: security delete-keychain "${{ steps.sign.outputs.keychain }}" || true
 
       - name: Upload dmg
         uses: actions/upload-artifact@v7
@@ -118,4 +155,4 @@ jobs:
           gh release create "$TAG" Handy-Remote-aarch64.dmg Handy-Remote-aarch64.dmg.sha256 \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
             --title "Handy Remote build ${GITHUB_RUN_NUMBER}" \
-            --notes "Handy v${VERSION} with a remote transcription engine (fork): one-shot upload or live dictation to a self-hosted server, Remote settings page, tray toggle, opt-in speculative cleanup. Built from ${GITHUB_SHA}. Ad-hoc signed."
+            --notes "Handy v${VERSION} with a remote transcription engine (fork): one-shot upload or live dictation to a self-hosted server, Remote settings page, tray toggle, opt-in speculative cleanup. Built from ${GITHUB_SHA}. Signed with the fork's fixed self-signed certificate."
